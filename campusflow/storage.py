@@ -5,9 +5,62 @@ import os
 
 DEFAULT_PATH = os.path.join("data", "tickets.json")
 
+REQUIRED_KEYS = (
+    "id",
+    "title",
+    "category",
+    "urgency",
+    "affected_users",
+    "priority",
+    "status",
+    "assigned_to",
+)
+VALID_STATUSES = ("open", "in_progress", "resolved")
+VALID_PRIORITIES = ("critical", "high", "medium", "low")
+
 
 class StorageError(Exception):
     """Raised when the tickets file cannot be read or written safely."""
+
+
+def _check_ticket(ticket, position, path):
+    """Raise StorageError if a loaded ticket is missing fields or has unusable values.
+
+    Catching this at load time gives a clear message, instead of a crash later
+    (for example a KeyError in the reports) when a function reads the bad field.
+    """
+    label = f"ticket #{position} in {path}"
+
+    missing = [key for key in REQUIRED_KEYS if key not in ticket]
+    if missing:
+        raise StorageError(
+            f"{label} is missing required field(s): {', '.join(missing)}. "
+            "Fix or move the file; it has not been changed."
+        )
+
+    ticket_id = ticket["id"]
+    if not (
+        isinstance(ticket_id, str)
+        and ticket_id.startswith("T")
+        and ticket_id[1:].isascii()
+        and ticket_id[1:].isdigit()
+    ):
+        raise StorageError(
+            f"{label} has an invalid id {ticket_id!r} (expected something like 'T001'). "
+            "It has not been changed."
+        )
+
+    if ticket["status"] not in VALID_STATUSES:
+        raise StorageError(
+            f"{label} has an invalid status {ticket['status']!r}. "
+            f"Expected one of: {', '.join(VALID_STATUSES)}. It has not been changed."
+        )
+
+    if ticket["priority"] not in VALID_PRIORITIES:
+        raise StorageError(
+            f"{label} has an invalid priority {ticket['priority']!r}. "
+            f"Expected one of: {', '.join(VALID_PRIORITIES)}. It has not been changed."
+        )
 
 
 def load_tickets(path=DEFAULT_PATH):
@@ -34,6 +87,10 @@ def load_tickets(path=DEFAULT_PATH):
         raise StorageError(
             f"{path} must contain a list of tickets. It has not been changed."
         )
+
+    for position, ticket in enumerate(data, start=1):
+        _check_ticket(ticket, position, path)
+
     return data
 
 
